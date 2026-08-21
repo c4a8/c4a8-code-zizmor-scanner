@@ -1,0 +1,159 @@
+name: zizmor
+
+on:
+  pull_request:
+    # synchronize reruns the scan whenever commits are pushed to an open PR
+    types: [opened, synchronize, reopened]
+  workflow_dispatch:
+
+permissions: {}
+
+# cancel a still-running scan of the same PR (or branch, for manual runs)
+# when a newer one starts
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  zizmor:
+    name: Scan GitHub Actions
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      # needed to create/update the findings comment on PRs
+      pull-requests: write
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      # fails the job on findings; results appear as PR annotations
+      - id: zizmor
+        uses: zizmorcore/zizmor-action@3dc1ecc9bcb9e94e9b2c709687979e1298497054 # v0.6.2
+        with:
+          advanced-security: false
+          annotations: true
+
+      # Builds a markdown report from zizmor's annotation output and appends it
+      # to the workflow run summary. The action tees zizmor's output to
+      # ${RUNNER_TEMP}/zizmor (internal detail of the pinned version — re-check
+      # when bumping the pin above).
+      - name: Build findings report
+        if: ${{ !cancelled() }}
+        env:
+          ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
+        run: |
+          python3 - <<'PYEOF'
+          import os
+          import re
+
+          raw_path = os.path.join(os.environ["RUNNER_TEMP"], "zizmor")
+          outcome = os.environ["ZIZMOR_OUTCOME"]
+          run_url = "{}/{}/actions/runs/{}".format(
+              os.environ["GITHUB_SERVER_URL"],
+              os.environ["GITHUB_REPOSITORY"],
+              os.environ["GITHUB_RUN_ID"],
+          )
+
+          MARKER = "<!-- zizmor-findings-report -->"
+          MAX_ROWS = 50
+          ANSI = re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+          # ::error file=x.yml,line=3,title=some-audit::message
+          CMD = re.compile(r"^::(error|warning|notice)\s+(.*?)::(.*)$")
+
+          def unescape(s, prop=False):
+              if prop:
+                  s = s.replace("%3A", ":").replace("%2C", ",")
+              return s.replace("%0D", "\r").replace("%0A", "\n").replace("%25", "%")
+
+          def cell(s):
+              s = s.replace("|", "\\|").replace("\r", "").replace("\n", "<br>")
+              return s if len(s) <= 300 else s[:297] + "..."
+
+          findings = []
+          if os.path.exists(raw_path):
+              with open(raw_path, encoding="utf-8", errors="replace") as f:
+                  for line in f:
+                      m = CMD.match(ANSI.sub("", line.strip()))
+                      if not m:
+                          continue
+                      level, props_raw, message = m.groups()
+                      props = {}
+                      for kv in props_raw.split(","):
+                          if "=" in kv:
+                              k, v = kv.split("=", 1)
+                              props[k.strip()] = unescape(v, prop=True)
+                      # message starts with "<filename>:<line>: ", already covered
+                      # by the Location column
+                      message = re.sub(r"^[^:]+:\d+:\s*", "", unescape(message))
+                      findings.append((level, props, message))
+
+          lines = [MARKER, "## 🌈 zizmor scan results", ""]
+          if findings:
+              lines.append(
+                  "❌ zizmor found **{}** finding(s) in this repository's "
+                  "GitHub Actions.".format(len(findings))
+              )
+              lines += ["", "| Severity | Check | Location | Details |", "|---|---|---|---|"]
+              icons = {"error": "🔴 error", "warning": "🟡 warning", "notice": "🔵 notice"}
+              for level, props, message in findings[:MAX_ROWS]:
+                  loc = props.get("file", "?")
+                  if props.get("line"):
+                      loc += ":" + props["line"]
+                  lines.append("| {} | `{}` | `{}` | {} |".format(
+                      icons[level], props.get("title", "?"), loc, cell(message)))
+              if len(findings) > MAX_ROWS:
+                  lines.append("")
+                  lines.append("...and {} more finding(s), see the run log.".format(
+                      len(findings) - MAX_ROWS))
+              lines += [
+                  "",
+                  "🔎 Full details: [workflow run log]({}) — on pull requests the "
+                  "findings also appear as inline annotations in the "
+                  "**Files changed** tab. Each check is documented at "
+                  "`https://docs.zizmor.sh/audits/#<check-name>`.".format(run_url),
+              ]
+          elif outcome == "success":
+              lines.append("✅ zizmor found no issues in this repository's GitHub Actions.")
+          else:
+              lines.append(
+                  "⚠️ The zizmor scan did not complete successfully (no findings "
+                  "were reported). Check the [workflow run log]({}) for the "
+                  "error.".format(run_url)
+              )
+          lines.append("")
+
+          report = "\n".join(lines)
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "zizmor-report.md"), "w") as f:
+              f.write(report)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(report)
+          PYEOF
+
+      # Creates the report comment on the PR, or updates the existing one on
+      # subsequent runs (matched via the hidden marker). Skipped for PRs from
+      # forks, whose read-only token cannot comment.
+      - name: Comment report on PR
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          marker='<!-- zizmor-findings-report -->'
+          report="${RUNNER_TEMP}/zizmor-report.md"
+
+          comment_id="$(gh api "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" --paginate \
+            --jq ".[] | select(.body | startswith(\"${marker}\")) | .id" | head -n 1)"
+
+          payload="$(jq -n --rawfile body "${report}" '{body: $body}')"
+          if [[ -n "${comment_id}" ]]; then
+            gh api --method PATCH "repos/${GITHUB_REPOSITORY}/issues/comments/${comment_id}" \
+              --input - <<< "${payload}" > /dev/null
+            echo "Updated existing report comment ${comment_id}"
+          else
+            gh api --method POST "repos/${GITHUB_REPOSITORY}/issues/${PR_NUMBER}/comments" \
+              --input - <<< "${payload}" > /dev/null
+            echo "Created report comment"
+          fi
