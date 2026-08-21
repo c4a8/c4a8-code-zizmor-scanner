@@ -43,18 +43,26 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
+          # commit the findings refer to: the PR head for pull_request runs,
+          # the pushed/dispatched commit otherwise
+          LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 - <<'PYEOF'
           import os
           import re
+          from urllib.parse import quote
 
           raw_path = os.path.join(os.environ["RUNNER_TEMP"], "zizmor")
           outcome = os.environ["ZIZMOR_OUTCOME"]
-          run_url = "{}/{}/actions/runs/{}".format(
-              os.environ["GITHUB_SERVER_URL"],
-              os.environ["GITHUB_REPOSITORY"],
-              os.environ["GITHUB_RUN_ID"],
+          repo_url = "{}/{}".format(
+              os.environ["GITHUB_SERVER_URL"], os.environ["GITHUB_REPOSITORY"]
           )
+          run_url = "{}/actions/runs/{}".format(repo_url, os.environ["GITHUB_RUN_ID"])
+          # permalink base for the exact commit that was scanned, so the line
+          # numbers in the findings keep pointing at the right code
+          blob_url = "{}/blob/{}".format(repo_url, os.environ["LINK_SHA"])
+          commit_url = "{}/commit/{}".format(repo_url, os.environ["LINK_SHA"])
+          DOCS_URL = "https://docs.zizmor.sh/audits/"
 
           MARKER = "<!-- zizmor-findings-report -->"
           MAX_ROWS = 50
@@ -98,11 +106,27 @@ jobs:
               lines += ["", "| Severity | Check | Location | Details |", "|---|---|---|---|"]
               icons = {"error": "🔴 error", "warning": "🟡 warning", "notice": "🔵 notice"}
               for level, props, message in findings[:MAX_ROWS]:
-                  loc = props.get("file", "?")
-                  if props.get("line"):
-                      loc += ":" + props["line"]
-                  lines.append("| {} | `{}` | `{}` | {} |".format(
-                      icons[level], props.get("title", "?"), loc, cell(message)))
+                  check = props.get("title", "?")
+                  check_cell = "`{}`".format(check)
+                  # audit names are the anchors on the docs page
+                  if re.fullmatch(r"[a-z0-9-]+", check):
+                      check_cell = "[`{}`]({}#{})".format(check, DOCS_URL, check)
+
+                  path = props.get("file", "")
+                  line_no = props.get("line", "")
+                  end_line = props.get("endLine", "")
+                  loc = (path or "?") + (":" + line_no if line_no else "")
+                  loc_cell = "`{}`".format(loc)
+                  if path:
+                      target = "{}/{}".format(blob_url, quote(path))
+                      if re.fullmatch(r"\d+", line_no):
+                          target += "#L" + line_no
+                          if re.fullmatch(r"\d+", end_line) and end_line != line_no:
+                              target += "-L" + end_line
+                      loc_cell = "[`{}`]({})".format(loc, target)
+
+                  lines.append("| {} | {} | {} | {} |".format(
+                      icons[level], check_cell, loc_cell, cell(message)))
               if len(findings) > MAX_ROWS:
                   lines.append("")
                   lines.append("...and {} more finding(s), see the run log.".format(
@@ -111,8 +135,10 @@ jobs:
                   "",
                   "🔎 Full details: [workflow run log]({}) — on pull requests the "
                   "findings also appear as inline annotations in the "
-                  "**Files changed** tab. Each check is documented at "
-                  "`https://docs.zizmor.sh/audits/#<check-name>`.".format(run_url),
+                  "**Files changed** tab. Each check links to its [audit "
+                  "documentation]({}), each location to the offending line at "
+                  "commit [`{}`]({}).".format(
+                      run_url, DOCS_URL, os.environ["LINK_SHA"][:7], commit_url),
               ]
           elif outcome == "success":
               lines.append("✅ zizmor found no issues in this repository's GitHub Actions.")
