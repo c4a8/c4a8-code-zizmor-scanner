@@ -19,9 +19,8 @@ jobs:
     name: Scan GitHub Actions
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      # needed to create/update the findings comment on PRs
-      pull-requests: write
+      contents: read # checkout the repository to scan its workflows
+      pull-requests: write # create/update the findings comment on PRs
 
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
