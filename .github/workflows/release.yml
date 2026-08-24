@@ -19,9 +19,8 @@ concurrency:
 jobs:
   release:
     name: Create version tag
-    uses: c4a8/c4a8-code-reusable-actions/.github/workflows/semver-version.yml@c327e7dd8443e59e9e08b8f1f58920e9e6e21cb0 # semver-versioning-v3.0.0
+    uses: c4a8/c4a8-code-reusable-actions/.github/workflows/semver-version.yml@f321371669a3ac3d19bf081e01ce57c9fae364d8 # semver-versioning-v3.0.1
     permissions:
       contents: write # create and push the version tag + GitHub release
-      actions: read # required by the reusable workflow
     with:
       is_prerelease: ${{ inputs.is_prerelease }}
