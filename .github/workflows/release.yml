@@ -1,0 +1,27 @@
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      is_prerelease:
+        description: Create a prerelease version
+        type: boolean
+        default: false
+
+permissions: {}
+
+# never run two releases at once; queue instead of cancelling so an
+# in-flight tag push is not interrupted
+concurrency:
+  group: ${{ github.workflow }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    name: Create version tag
+    uses: c4a8/c4a8-code-reusable-actions/.github/workflows/semver-version.yml@c327e7dd8443e59e9e08b8f1f58920e9e6e21cb0 # semver-versioning-v3.0.0
+    permissions:
+      contents: write # create and push the version tag + GitHub release
+      actions: read # required by the reusable workflow
+    with:
+      is_prerelease: ${{ inputs.is_prerelease }}
