@@ -24,3 +24,4 @@ jobs:
       contents: write # create and push the version tag + GitHub release
     with:
       is_prerelease: ${{ inputs.is_prerelease }}
+    environment: release
