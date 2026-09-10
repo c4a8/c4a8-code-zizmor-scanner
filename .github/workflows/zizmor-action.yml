@@ -33,6 +33,11 @@ jobs:
         with:
           advanced-security: false
           annotations: true
+          # zizmor still runs and collects inputs itself (workflows, action
+          # definitions, dependabot and pre-commit configs). Only its exit code
+          # 3 ("no inputs collected") is downgraded to a warning, so repos with
+          # nothing to audit pass instead of failing. Findings still fail.
+          fail-on-no-inputs: false
 
       # Builds a markdown report from zizmor's annotation output and appends it
       # to the workflow run summary. The action tees zizmor's output to
@@ -47,6 +52,7 @@ jobs:
           LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           python3 - <<'PYEOF'
+          import glob
           import os
           import re
           from urllib.parse import quote
@@ -77,6 +83,24 @@ jobs:
           def cell(s):
               s = s.replace("|", "\\|").replace("\r", "").replace("\n", "<br>")
               return s if len(s) <= 300 else s[:297] + "..."
+
+          # Mirrors zizmor's default input collection, for report wording only:
+          # zizmor prints "no inputs collected" to stderr, which the action does
+          # not tee into raw_path, so an empty raw_path alone cannot tell
+          # "nothing found" from "nothing to scan". The job outcome is driven
+          # solely by zizmor's exit code, never by this check.
+          def count_auditable_inputs():
+              patterns = [
+                  os.path.join(".github", "workflows", "*.yml"),
+                  os.path.join(".github", "workflows", "*.yaml"),
+                  os.path.join("**", "action.yml"),
+                  os.path.join("**", "action.yaml"),
+                  os.path.join(".github", "dependabot.yml"),
+                  os.path.join(".github", "dependabot.yaml"),
+                  ".pre-commit-config.yaml",
+              ]
+              found = [p for pat in patterns for p in glob.glob(pat, recursive=True)]
+              return len([p for p in found if not p.startswith(".git" + os.sep)])
 
           findings = []
           if os.path.exists(raw_path):
@@ -139,6 +163,11 @@ jobs:
                   "commit [`{}`]({}).".format(
                       run_url, DOCS_URL, os.environ["LINK_SHA"][:7], commit_url),
               ]
+          elif outcome == "success" and count_auditable_inputs() == 0:
+              lines.append(
+                  "ℹ️ Nothing to scan: this repository has no GitHub Actions "
+                  "workflows, action definitions or Dependabot configs."
+              )
           elif outcome == "success":
               lines.append("✅ zizmor found no issues in this repository's GitHub Actions.")
           else:
@@ -150,9 +179,10 @@ jobs:
           lines.append("")
 
           report = "\n".join(lines)
-          with open(os.path.join(os.environ["RUNNER_TEMP"], "zizmor-report.md"), "w") as f:
+          with open(os.path.join(os.environ["RUNNER_TEMP"], "zizmor-report.md"), "w",
+                    encoding="utf-8") as f:
               f.write(report)
-          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write(report)
           PYEOF
 
