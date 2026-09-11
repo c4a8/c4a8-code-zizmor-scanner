@@ -19,8 +19,19 @@ concurrency:
 jobs:
   release:
     name: Create version tag
-    uses: c4a8/c4a8-code-reusable-actions/.github/workflows/semver-version.yml@f321371669a3ac3d19bf081e01ce57c9fae364d8 # semver-versioning-v3.0.1
     permissions:
       contents: write # create and push the version tag + GitHub release
-    with:
-      is_prerelease: ${{ inputs.is_prerelease }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      tag: ${{ steps.version.outputs.tag }}
+      bump_type: ${{ steps.version.outputs.bump_type }}
+      previous_tag: ${{ steps.version.outputs.previous_tag }}
+      commit_subject: ${{ steps.version.outputs.commit_subject }}
+    steps:
+      - name: Generate semantic version
+        id: version
+        uses: glueckkanja/action-semantic-version@f28349c3cc2ec7845960c583796a3b9acc54720a # v3.0.2
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          is_prerelease: ${{ inputs.is_prerelease }}
