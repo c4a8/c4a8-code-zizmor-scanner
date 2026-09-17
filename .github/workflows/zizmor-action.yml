@@ -44,6 +44,7 @@ jobs:
       # ${RUNNER_TEMP}/zizmor (internal detail of the pinned version — re-check
       # when bumping the pin above).
       - name: Build findings report
+        id: report
         if: ${{ !cancelled() }}
         env:
           ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
@@ -121,6 +122,8 @@ jobs:
                       findings.append((level, props, message))
 
           lines = [MARKER, "## 🌈 zizmor scan results", ""]
+          # "nothing to scan" only goes to the run summary, not to a PR comment
+          skip_comment = False
           if findings:
               lines.append(
                   "❌ zizmor found **{}** finding(s) in this repository's "
@@ -164,6 +167,7 @@ jobs:
                       run_url, DOCS_URL, os.environ["LINK_SHA"][:7], commit_url),
               ]
           elif outcome == "success" and count_auditable_inputs() == 0:
+              skip_comment = True
               lines.append(
                   "ℹ️ Nothing to scan: this repository has no GitHub Actions "
                   "workflows, action definitions or Dependabot configs."
@@ -184,13 +188,16 @@ jobs:
               f.write(report)
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a", encoding="utf-8") as f:
               f.write(report)
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as f:
+              f.write("skip_comment={}\n".format("true" if skip_comment else "false"))
           PYEOF
 
       # Creates the report comment on the PR, or updates the existing one on
       # subsequent runs (matched via the hidden marker). Skipped for PRs from
-      # forks, whose read-only token cannot comment.
+      # forks, whose read-only token cannot comment, and when there was nothing
+      # to scan.
       - name: Comment report on PR
-        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && steps.report.outputs.skip_comment != 'true' }}
         env:
           GH_TOKEN: ${{ github.token }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
