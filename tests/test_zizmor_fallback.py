@@ -58,7 +58,9 @@ class FallbackTests(unittest.TestCase):
                 with self.assertRaises(SystemExit) as exit:
                     exec(compile(script('zizmor'), str(WORKFLOW), 'exec'), {})
                 if report:
-                    with patch.dict(os.environ, ZIZMOR_OUTCOME='success' if exit.exception.code == 0 else 'failure'):
+                    outputs = dict(line.split('=', 1) for line in (temp / 'output').read_text().splitlines())
+                    with patch.dict(os.environ, ZIZMOR_OUTCOME='success' if exit.exception.code == 0 else 'failure',
+                                    SCAN_COMPLETED=outputs.get('scan_completed', '')):
                         exec(compile(script('report'), str(WORKFLOW), 'exec'), {})
             self.assertTrue((workflows / 'bad.yml').exists())
             warning_data = json.loads((temp / 'zizmor-fallbacks.json').read_text())
@@ -97,6 +99,8 @@ class FallbackTests(unittest.TestCase):
         self.assertTrue(calls[-1][1]['rules']['ref-confusion']['disable'])
         self.assertEqual(raw, finding)
         self.assertIn('1** finding', report)
+        self.assertNotIn('scan could not complete', report)
+        self.assertNotIn('scan step failed', report)
         self.assertIn('⚠️ **Scan coverage', report)
         self.assertEqual([line for line in report.splitlines() if line.startswith('- ')],
                          ['- `.github/workflows/bad.yml` (`impostor-commit`, `ref-confusion`)'])
@@ -132,13 +136,20 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(self.run_scan([(3, '', 'no inputs collected')])[0], 0)
 
     def test_findings_are_not_retried(self):
-        result = self.run_scan([(14, '::error file=x,line=1,title=test::finding\n', '')])
+        result = self.run_scan([(14, '::error file=x,line=1,title=test::finding\n', '')], report=True)
         self.assertEqual(result[0], 14)
         self.assertEqual(len(result[1]), 1)
+        self.assertIn('1** finding', result[4])
+        self.assertNotIn('scan could not complete', result[4])
+        self.assertNotIn('scan step failed', result[4])
 
     def test_fatal_error_after_findings_still_fails(self):
-        result = self.run_scan([self.crash(), (14, 'finding', ''), (1, '', 'network failure')])
+        result = self.run_scan([self.crash(),
+                                (14, '::error file=x,line=1,title=test::finding\n', ''),
+                                (1, '', 'network failure')], report=True)
         self.assertEqual(result[0], 1)
+        self.assertIn('1** finding', result[4])
+        self.assertIn('scan could not complete due to a scanner error', result[4])
 
 
 if __name__ == '__main__':
