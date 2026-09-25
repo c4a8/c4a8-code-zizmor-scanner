@@ -173,6 +173,11 @@ jobs:
                           record(result)
                           break
                       rule = crashed[0]
+          # Findings fail the job but still represent a completed scan.
+          # If the wrapper raises unexpectedly, this output stays unset so the
+          # report treats the failed step as a scanner error.
+          with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as output:
+              output.write("scan_completed={}\n".format("false" if status == 1 else "true"))
           raise SystemExit(status)
           PYEOF
 
@@ -182,6 +187,7 @@ jobs:
         if: ${{ !cancelled() }}
         env:
           ZIZMOR_OUTCOME: ${{ steps.zizmor.outcome }}
+          SCAN_COMPLETED: ${{ steps.zizmor.outputs.scan_completed }}
           # commit the findings refer to: the PR head for pull_request runs,
           # the pushed/dispatched commit otherwise
           LINK_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
@@ -330,8 +336,8 @@ jobs:
                   "were reported). Check the [workflow run log]({}) for the "
                   "error.".format(run_url)
               )
-          if findings and outcome != "success":
-              lines += ["", "⚠️ The scan step failed. Findings or an additional scanner error may have caused the failure; see the [workflow run log]({}).".format(run_url)]
+          if findings and outcome != "success" and os.environ.get("SCAN_COMPLETED") != "true":
+              lines += ["", "⚠️ The scan could not complete due to a scanner error. Findings above may be incomplete; see the [workflow run log]({}).".format(run_url)]
           lines.append("")
 
           report = "\n".join(lines)
