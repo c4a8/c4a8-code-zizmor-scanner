@@ -115,7 +115,7 @@ jobs:
           def warn(rule, path):
               warnings.append({"rule": rule, "file": path})
               warnings_path.write_text(json.dumps(warnings))
-              message = f"⚠️ Audit {rule} crashed on {path}; retrying with this audit disabled for this file only. Scan coverage is reduced."
+              message = f"⚠️ Audit {rule} could not be completed for {path}; retrying with this audit disabled for this file only. Scan coverage is reduced."
               message = message.replace("%", "%25").replace("\r", "%0D").replace("\n", "%0A")
               print(f"::warning::{message}", flush=True)
 
@@ -248,11 +248,14 @@ jobs:
           # "nothing to scan" only goes to the run summary, not to a PR comment
           skip_comment = False
           if fallbacks:
-              lines += ["⚠️ **Scan coverage is reduced.** The following audits crashed and were disabled only for the listed files during retries:", ""]
+              lines += ["⚠️ **Scan coverage is reduced.** Some checks could not be completed by the scanner and were skipped for the entire files listed below. This does not indicate a failed security check:", ""]
+              rules_by_file = {}
               for fallback in fallbacks:
-                  lines.append("- ⚠️ `{}` — `{}` (entire file).".format(
-                      cell(fallback["rule"]), cell(fallback["file"])))
-              lines += ["", "See the [workflow run log]({}) for exception details.".format(run_url), ""]
+                  rules_by_file.setdefault(fallback["file"], []).append(fallback["rule"])
+              for path, rules in rules_by_file.items():
+                  lines.append("- `{}` ({})".format(
+                      cell(path), ", ".join("`{}`".format(cell(rule)) for rule in rules)))
+              lines += ["", "See the [workflow run log]({}) for details.".format(run_url), ""]
           if findings:
               lines.append(
                   "❌ zizmor found **{}** finding(s) in this repository's "

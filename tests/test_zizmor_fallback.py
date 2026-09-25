@@ -84,6 +84,8 @@ class FallbackTests(unittest.TestCase):
         self.assertIn('⚠️ **Scan coverage is reduced.**', report)
         self.assertIn('impostor-commit', report)
         self.assertNotIn('✅', report)
+        self.assertNotIn('crashed', report)
+        self.assertIn('This does not indicate a failed security check', report)
 
     def test_multiple_rules_and_findings(self):
         finding = '::error file=.github/workflows/good.yml,line=1,title=artipacked::issue\n'
@@ -96,13 +98,18 @@ class FallbackTests(unittest.TestCase):
         self.assertEqual(raw, finding)
         self.assertIn('1** finding', report)
         self.assertIn('⚠️ **Scan coverage', report)
+        self.assertEqual([line for line in report.splitlines() if line.startswith('- ')],
+                         ['- `.github/workflows/bad.yml` (`impostor-commit`, `ref-confusion`)'])
 
     def test_multiple_files_are_isolated_independently(self):
         result = self.run_scan([self.crash(),
                                 self.crash(file=".github/workflows/good.yml"),
-                                (3, "", ""), (0, "", ""), (0, "", "")])
+                                (3, "", ""), (0, "", ""), (0, "", "")], report=True)
         self.assertEqual(result[0], 0)
         self.assertEqual(len(result[2]), 2)
+        self.assertEqual([line for line in result[4].splitlines() if line.startswith("- ")],
+                         ["- `.github/workflows/bad.yml` (`impostor-commit`)",
+                          "- `.github/workflows/good.yml` (`impostor-commit`)"])
         self.assertEqual([call[0] for call in result[1][-2:]],
                          [".github/workflows/bad.yml", ".github/workflows/good.yml"])
 
