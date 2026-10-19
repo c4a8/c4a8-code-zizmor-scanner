@@ -31,7 +31,7 @@ jobs:
     steps:
       - name: Generate semantic version
         id: version
-        uses: glueckkanja/action-semantic-version@f28349c3cc2ec7845960c583796a3b9acc54720a # v3.0.2
+        uses: glueckkanja/action-semantic-version@35b934d4dcec52abc5a3f49d9e60a51df9357730 # v4.0.1
         with:
           github_token: ${{ secrets.GITHUB_TOKEN }}
           is_prerelease: ${{ inputs.is_prerelease }}
