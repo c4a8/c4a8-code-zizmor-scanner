@@ -54,7 +54,7 @@ Other files retain the audit. Existing repository configuration is preserved whe
 
 Multiple failing audits can be disabled for the same file. Checked-out files are not modified. An unrecognized error or a repeated failure of an already-disabled audit still fails the scan.
 
-Every skipped audit/file pair produces a workflow warning and appears in the summary and eligible PR comment. **A successful fallback means reduced scan coverage.** It does not establish that the skipped checks passed.
+Every skipped audit/file pair produces a workflow warning and appears in the summary and eligible PR comment, where the per-file list is collapsed in an expandable `<details>` section to keep reports short. **A successful fallback means reduced scan coverage.** It does not establish that the skipped checks passed.
 
 ### Results and reporting
 

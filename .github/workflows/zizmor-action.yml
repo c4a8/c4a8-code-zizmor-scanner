@@ -276,10 +276,16 @@ jobs:
               rules_by_file = {}
               for fallback in fallbacks:
                   rules_by_file.setdefault(fallback["file"], []).append(fallback["rule"])
+              # Collapsed so repositories with many affected files keep the
+              # comment short; the blank lines let GitHub render the Markdown
+              # list inside the HTML block.
+              lines += ["<details>", "<summary>Skipped audits in {} file(s)</summary>".format(
+                  len(rules_by_file)), ""]
               for path, rules in rules_by_file.items():
                   lines.append("- `{}` ({})".format(
                       cell(path), ", ".join("`{}`".format(cell(rule)) for rule in rules)))
-              lines += ["", "See the [workflow run log]({}) for details.".format(run_url), ""]
+              lines += ["", "</details>", ""]
+              lines += ["See the [workflow run log]({}) for details.".format(run_url), ""]
           if findings:
               lines.append(
                   "❌ zizmor found **{}** finding(s) in this repository's "
@@ -329,7 +335,7 @@ jobs:
                   "workflows, action definitions or Dependabot configs."
               )
           elif outcome == "success":
-              lines.append("⚠️ Remaining checks found no issues; the skipped audits above were not evaluated." if fallbacks else "✅ zizmor found no issues in this repository's GitHub Actions.")
+              lines.append("☑️ Remaining checks found no issues; the skipped audits above were not evaluated." if fallbacks else "✅ zizmor found no issues in this repository's GitHub Actions.")
           else:
               lines.append(
                   "⚠️ The zizmor scan did not complete successfully (no findings "
