@@ -1,6 +1,6 @@
 # c4a8 zizmor scanner
 
-A self-contained GitHub Actions security scanning workflow for c4a8 repositories, with a manual release pipeline for versioning this repository.
+A self-contained GitHub Actions security scanning workflow for c4a8 repositories, with a release pipeline for versioning this repository.
 
 ## Repository layout
 
@@ -72,26 +72,35 @@ Completed scan output also produces GitHub annotations. Fatal diagnostics are pr
 
 ## Release pipeline
 
-The [release workflow](.github/workflows/release.yml) is started manually through `workflow_dispatch`. It has one boolean input:
+The [release workflow](.github/workflows/release.yml) has two triggers:
+
+| Trigger | Result |
+| --- | --- |
+| Push to `main` | Automatically creates a preview prerelease tagged `vX.Y.Z-preview.N`. Pushes to other branches do not trigger the workflow. |
+| `workflow_dispatch` | Creates a regular release (`vX.Y.Z`), or a preview prerelease if `is_prerelease` is enabled. |
+
+Manual runs have one boolean input:
 
 | Input | Default | Purpose |
 | --- | --- | --- |
-| `is_prerelease` | `false` | Request a prerelease version from the semantic-version action. |
+| `is_prerelease` | `false` | Create a preview prerelease instead of a regular release. |
 
 ### Creating a release
 
 1. Review the intended release ref and run the regression tests below. The release workflow itself does not run tests or wait for a scanner result.
 2. Open **Actions → release → Run workflow** and select the intended ref.
-3. Leave `is_prerelease` disabled for a regular release, or enable it for a prerelease.
+3. Leave `is_prerelease` disabled for a regular release, or enable it for a preview prerelease.
 4. Start the workflow and inspect the **Create version tag** job, then verify the resulting tag and GitHub release.
 
-The job runs on `ubuntu-latest` and grants `contents: write` to create tags and releases. Its single step calls `glueckkanja/action-semantic-version`, pinned to commit `f28349c3cc2ec7845960c583796a3b9acc54720a` (v3.0.2), passing `secrets.GITHUB_TOKEN` and the prerelease input.
+The job runs on `ubuntu-latest` and grants `contents: write` to create tags and releases. Its single step calls `glueckkanja/action-semantic-version`, pinned to commit `b413070dd1f039b1fbfda9f402dd52d602879fb3` (v5.0.0), passing `secrets.GITHUB_TOKEN`, `is_prerelease`, and `prerelease_name`.
 
-Version calculation, tag naming, and release creation are delegated to that external action. This repository does not implement its own version-bump rules. Consult the [pinned action source](https://github.com/glueckkanja/action-semantic-version/tree/f28349c3cc2ec7845960c583796a3b9acc54720a) for those details.
+Since v4, the action no longer adds a prerelease suffix automatically. The workflow therefore passes `prerelease_name: preview` for every prerelease, so preview tags never take the plain `vX.Y.Z` tag that a later regular release needs. Regular releases pass an empty `prerelease_name`. Preview numbering restarts for each new base version, which is computed from the last regular release tag.
+
+Version calculation, tag naming, and release creation are delegated to that external action. This repository does not implement its own version-bump rules. Consult the [pinned action source](https://github.com/glueckkanja/action-semantic-version/tree/b413070dd1f039b1fbfda9f402dd52d602879fb3) for those details.
 
 The release job exposes the action's `version`, `tag`, `bump_type`, `previous_tag`, and `commit_subject` outputs. No downstream job consumes them in this workflow.
 
-Release runs share one concurrency group and do not cancel an in-progress release. There are no branch restrictions or environment approval gates configured in the workflow. The pipeline has no build, package publishing, or workflow-distribution step; updating consuming repositories is a separate operation.
+Release runs share one concurrency group and do not cancel an in-progress release. Automatic runs are limited to pushes to `main`; manual runs can still be started on any ref, and there are no environment approval gates. The pipeline has no build, package publishing, or workflow-distribution step; updating consuming repositories is a separate operation.
 
 ## Maintenance and local checks
 
