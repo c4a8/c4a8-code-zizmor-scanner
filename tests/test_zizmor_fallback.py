@@ -88,6 +88,11 @@ class FallbackTests(unittest.TestCase):
         self.assertNotIn('✅', report)
         self.assertNotIn('crashed', report)
         self.assertIn('This does not indicate a failed security check', report)
+        self.assertIn('☑️ Remaining checks found no issues', report)
+        # The per-file list is collapsed; blank lines around it are required
+        # for GitHub to render the Markdown list inside <details>.
+        self.assertIn('<details>\n<summary>Skipped audits in 1 file(s)</summary>\n\n'
+                      '- `.github/workflows/bad.yml` (`impostor-commit`)\n\n</details>\n', report)
 
     def test_multiple_rules_and_findings(self):
         finding = '::error file=.github/workflows/good.yml,line=1,title=artipacked::issue\n'
@@ -111,6 +116,7 @@ class FallbackTests(unittest.TestCase):
                                 (3, "", ""), (0, "", ""), (0, "", "")], report=True)
         self.assertEqual(result[0], 0)
         self.assertEqual(len(result[2]), 2)
+        self.assertIn('<summary>Skipped audits in 2 file(s)</summary>', result[4])
         self.assertEqual([line for line in result[4].splitlines() if line.startswith("- ")],
                          ["- `.github/workflows/bad.yml` (`impostor-commit`)",
                           "- `.github/workflows/good.yml` (`impostor-commit`)"])
