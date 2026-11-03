@@ -33,7 +33,7 @@ The scanner and comment step use the run's GitHub token. Fork pull requests skip
 ### Scan workflow
 
 1. **Check out the repository.** The checkout action is pinned to a full commit SHA.
-2. **Install the scanner.** Create a temporary Python virtual environment and install `zizmor==1.30.1` and `PyYAML==6.0.3`. Package versions and approved Linux x86_64 wheel SHA-256 hashes are embedded in the workflow. Installation requires matching hashes and binary wheels.
+2. **Install the scanner.** Create a temporary Python virtual environment and install `zizmor==1.31.1` and `PyYAML==6.0.3`. Package versions and approved Linux x86_64 wheel SHA-256 hashes are embedded in the workflow. Installation requires matching hashes and binary wheels.
 3. **Run audits.** Invoke zizmor with `--format=github --color=never --persona=regular`, allowing the scanner to collect repository inputs. The initial scan runs against a temporary repository copy.
 4. **Recover from recognized audit exceptions.** Isolate affected files and retry them as described below.
 5. **Build a report.** Parse completed scan annotations into a Markdown report and append it to the GitHub Actions job summary. Reporting runs after failures unless the run was cancelled.
